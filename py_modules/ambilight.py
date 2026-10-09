@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import platform
 import subprocess
+from dataclasses import replace
 
 from run_as_user import user_env, user_cred
 
@@ -26,6 +27,7 @@ ODIN2_CAP_H = 36
 RETRY_INTERVAL = 3.0
 MAX_RETRY_INTERVAL = 30.0
 STABLE_CAPTURE_INTERVAL = 15.0
+MAX_CAPTURE_FPS = 60
 
 _NATIVE_ENV_KEYS = (
     "LD_LIBRARY_PATH",
@@ -34,6 +36,11 @@ _NATIVE_ENV_KEYS = (
     "GST_PLUGIN_SYSTEM_PATH",
 )
 _VENDOR_ROOT = Path(__file__).resolve().parent / "vendor" / "arm64"
+# pw_capture.py asks gamescope for small frames at the ambilight rate; pipewiresrc
+# takes a full-size frame on every refresh. It needs the host Python and libpipewire.
+PW_CAPTURE = Path(__file__).resolve().parent / "pw_capture.py"
+_PIPEWIRE_LIBS = ("lib64/libpipewire-0.3.so.0", "lib/libpipewire-0.3.so.0",
+                  "lib/aarch64-linux-gnu/libpipewire-0.3.so.0")
 _VENDOR_PW_DUMP = _VENDOR_ROOT / "bin" / "pw-dump"
 _VENDOR_GST_DIR = _VENDOR_ROOT / "lib64" / "gstreamer-1.0"
 _VENDOR_HASHES = {
@@ -50,6 +57,7 @@ class CaptureBackend:
     pw_dump: str
     gst_launch: str
     gst_plugin_path: str | None = None
+    python: str | None = None
 
 
 def _native_bin(name):
@@ -120,8 +128,26 @@ def _has_pipewiresrc(gst_inspect, plugin_path=None):
         return False
 
 
+def _pw_capture_python():
+    python = _native_bin("python3")
+    if not python or not PW_CAPTURE.is_file():
+        return None
+    usr = Path(python).parent.parent
+    if not any((usr / lib).exists() for lib in _PIPEWIRE_LIBS):
+        return None
+    return python
+
+
 def resolve_capture_backend():
     """Select one coherent native backend, preferring the host over the bundle."""
+    backend = _resolve_gst_backend()
+    python = _pw_capture_python() if backend else None
+    if python:
+        return replace(backend, name=backend.name + "+pw_capture", python=python)
+    return backend
+
+
+def _resolve_gst_backend():
     gst_launch = _native_bin("gst-launch-1.0")
     gst_inspect = _native_bin("gst-inspect-1.0")
     system_pw_dump = _native_bin("pw-dump")
@@ -229,12 +255,18 @@ def adaptive_alpha(current, target, base_alpha):
     return max(base_alpha, min(1.0, delta / 128.0))
 
 
-def _gst_command(gst_launch, node, width, height):
-    caps = f"video/x-raw,format=RGB,width={width},height={height}"
+def _gst_command(gst_launch, node, width, height, max_fps):
+    # gamescope sends a full-size frame for every frame it composites (up to
+    # the panel refresh rate). Drop the extra frames first and shrink before
+    # converting, so only a few small frames per second reach videoconvert.
+    size = f"width={width},height={height}"
     return [
         gst_launch, "-q", "pipewiresrc", f"path={int(node)}",
+        "!", "videorate", "drop-only=true", f"max-rate={max(1, int(max_fps))}",
         "!", "queue", "leaky=downstream", "max-size-buffers=2",
-        "!", "videoconvert", "!", "videoscale", "!", caps, "!", "fdsink", "fd=1",
+        "!", "videoscale", "!", f"video/x-raw,{size}",
+        "!", "videoconvert", "!", f"video/x-raw,format=RGB,{size}",
+        "!", "fdsink", "fd=1",
     ]
 
 
@@ -430,12 +462,20 @@ class Ambilight:
                 continue
 
             interval = self._capture_interval()
-            command = _gst_command(
-                self._backend.gst_launch,
-                node,
-                self._capture_width,
-                self._capture_height,
-            )
+            if self._backend.python:
+                command = [
+                    self._backend.python, str(PW_CAPTURE), str(node),
+                    str(self._capture_width), str(self._capture_height),
+                    str(round(1.0 / interval)),
+                ]
+            else:
+                command = _gst_command(
+                    self._backend.gst_launch,
+                    node,
+                    self._capture_width,
+                    self._capture_height,
+                    self._max_fps or MAX_CAPTURE_FPS,
+                )
             proc = None
             reader_task = None
             logger.info("ambilight start: node=%s fps=%.0f", node, 1.0 / interval)

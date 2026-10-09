@@ -177,12 +177,20 @@ def test_run_shows_fallback_color_when_source_missing(monkeypatch):
 
 
 def test_gst_command_uses_leaky_queue_before_scaling():
-    cmd = _gst_command("/native/gst-launch-1.0", 68, 24, 14)
+    cmd = _gst_command("/native/gst-launch-1.0", 68, 24, 14, 10)
     assert cmd[0] == "/native/gst-launch-1.0"
     assert "queue" in cmd
     assert "leaky=downstream" in cmd
     assert cmd.index("queue") < cmd.index("videoscale")
     assert "path=68" in cmd
+
+
+def test_gst_command_drops_frames_and_scales_before_converting():
+    cmd = _gst_command("/native/gst-launch-1.0", 68, 24, 14, 30)
+    assert cmd.index("videorate") < cmd.index("videoscale")
+    assert "max-rate=30" in cmd
+    assert cmd.index("videoscale") < cmd.index("videoconvert")
+    assert "video/x-raw,format=RGB,width=24,height=14" in cmd
 
 
 def test_native_env_removes_guest_library_and_gstreamer_paths(monkeypatch):
