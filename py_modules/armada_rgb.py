@@ -404,6 +404,9 @@ def build_armada_device(model, leds_dir, sysfs_root="/"):
     return profile, device
 
 
+_SIDE_REGION_TOP = 0.45
+
+
 def layout_for_profile(model, profile, zones):
     """Return calibrated Ambilight grouping only where physical sides are known."""
     side_models = {
@@ -421,16 +424,18 @@ def layout_for_profile(model, profile, zones):
     }
     if model in side_models and zones > 1 and zones % 2 == 0:
         half = zones // 2
+        # The side lights sit on the lower half of the grips, so sample only the
+        # lower part of each screen edge instead of its full height.
         return [
             {
                 "name": "Left lights",
-                "region": [0.0, 0.0, 0.20, 1.0],
+                "region": [0.0, _SIDE_REGION_TOP, 0.20, 1.0],
                 "zones": list(range(half)),
                 "kind": "shared-edge",
             },
             {
                 "name": "Right lights",
-                "region": [0.80, 0.0, 1.0, 1.0],
+                "region": [0.80, _SIDE_REGION_TOP, 1.0, 1.0],
                 "zones": list(range(half, zones)),
                 "kind": "shared-edge",
             },

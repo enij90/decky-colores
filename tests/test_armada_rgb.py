@@ -215,6 +215,8 @@ def test_known_side_layouts_share_ambilight_by_side():
     assert layout[0]["zones"] == [0, 1, 2, 3]
     assert layout[1]["zones"] == [4, 5, 6, 7]
     assert {group["kind"] for group in layout} == {"shared-edge"}
+    assert layout[0]["region"] == [0.0, 0.45, 0.20, 1.0]
+    assert layout[1]["region"] == [0.80, 0.45, 1.0, 1.0]
 
 
 def test_odin3_eight_zone_channel_frames_are_serialized(tmp_path, monkeypatch):
