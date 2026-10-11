@@ -10,6 +10,7 @@ from armada_rgb import (
     ArmadaRgbDevice,
     GcmHidRgbDevice,
     build_armada_device,
+    gcm_key_packet,
     gcm_strip_packet,
     catalog_for_root,
     layout_for_profile,
@@ -339,7 +340,25 @@ def test_gcmhid_finds_the_vendor_interface_and_writes_each_strip(tmp_path):
     assert device.apply_zones([(255, 0, 0), (0, 0, 255)], 100, True)
     data = node.read_bytes()
     assert data[:13] == gcm_strip_packet(1, [0, 100, 100], 0x01)
-    assert data[13:] == gcm_strip_packet(2, [170, 100, 100], 0x01)
+    assert data[13:26] == gcm_strip_packet(2, [170, 100, 100], 0x01)
+    assert data[26:] == gcm_key_packet(0xC2, [170, 100, 100])
+
+
+def test_gcm_key_packet_matches_the_legion_app():
+    # 05 08 0A 01 C2 H S B 01 plus the byte sum, after the report ID.
+    assert gcm_key_packet(0xC2, [0, 100, 100]) == bytes(
+        [0x00, 0x05, 0x08, 0x0A, 0x01, 0xC2, 0x00, 0x64, 0x64, 0x01, 0xA3]
+    )
+
+
+def test_gcmhid_legion_key_follows_the_right_strip_when_off_and_in_effects(tmp_path):
+    node = _gcm_sysfs(tmp_path)
+    device = GcmHidRgbDevice(_G9, str(tmp_path))
+    assert device.apply_zones([(255, 0, 0)], 100, False)
+    assert node.read_bytes()[26:] == gcm_key_packet(0xC2, [0, 0, 0])
+    node.write_bytes(b"")
+    assert device.apply_hardware_effect("rainbow", (255, 0, 0), 0, 50, True)
+    assert node.read_bytes()[26:] == gcm_key_packet(0xC2, [0, 100, 50])
 
 
 def test_gcmhid_brightness_off_and_effects(tmp_path):

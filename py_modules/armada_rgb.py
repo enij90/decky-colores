@@ -437,6 +437,10 @@ _GCM_SOLID = 0x01
 _GCM_BREATHING = 0x02
 _GCM_RAINBOW = 0x04
 _GCM_OFF = 0xFF
+# The Legion button LED (key 0xC2, 05 08 0A 01 <key> H S B <effect>) sits next
+# to the right strip and takes its color. Keys only do a solid color.
+_GCM_LEGION_KEY = 0xC2
+_GCM_LEGION_KEY_STRIP = 2
 _GCM_DESCRIPTOR_PREFIX = b"\x06\x7a\xff"  # usage page 0xFF7A
 _GCM_EFFECTS = {
     "breathing": _GCM_BREATHING,
@@ -468,6 +472,11 @@ def _gcm_byte(percent):
 
 def gcm_strip_packet(strip, hsb, effect, speed=0x80, brightness=0xFF):
     payload = [0x05, 0x0C, 0x0C, 0x01, strip, *hsb, effect, speed, brightness]
+    return bytes([0x00, *payload, sum(payload) & 0xFF])
+
+
+def gcm_key_packet(key, hsb):
+    payload = [0x05, 0x08, 0x0A, 0x01, key, *hsb, _GCM_SOLID]
     return bytes([0x00, *payload, sum(payload) & 0xFF])
 
 
@@ -570,8 +579,17 @@ class GcmHidRgbDevice(LedDevice):
         with self._write_lock:
             self._close()
 
+    def _with_legion_key(self, packets, strip, hsb):
+        if strip == _GCM_LEGION_KEY_STRIP:
+            packets.append(gcm_key_packet(_GCM_LEGION_KEY, hsb))
+        return packets
+
     def _off(self):
-        return self._send([gcm_strip_packet(s, [0, 0, 0], _GCM_OFF) for s in self._strips])
+        packets = []
+        for strip in self._strips:
+            packets.append(gcm_strip_packet(strip, [0, 0, 0], _GCM_OFF))
+            self._with_legion_key(packets, strip, [0, 0, 0])
+        return self._send(packets)
 
     def apply_zones(self, zone_colors, brightness, power):
         if not power:
@@ -579,8 +597,9 @@ class GcmHidRgbDevice(LedDevice):
         packets = []
         for strip, color in zip(self._strips, self._fit(zone_colors)):
             hue, saturation, value = _gcm_hsb(_correct(color, self._correction))
-            value = _scale(brightness, value)
-            packets.append(gcm_strip_packet(strip, [hue, saturation, value], _GCM_SOLID))
+            hsb = [hue, saturation, _scale(brightness, value)]
+            packets.append(gcm_strip_packet(strip, hsb, _GCM_SOLID))
+            self._with_legion_key(packets, strip, hsb)
         return self._send(packets)
 
     def apply_solid(self, color, brightness, power):
@@ -594,10 +613,12 @@ class GcmHidRgbDevice(LedDevice):
             return self.apply_solid(color, brightness, power)
         hue, saturation, value = _gcm_hsb(_correct(color, self._correction))
         hsb = [hue, saturation, _scale(brightness, value)]
-        return self._send([
-            gcm_strip_packet(s, hsb, effect, _gcm_byte(speed), _gcm_byte(brightness))
-            for s in self._strips
-        ])
+        packets = []
+        for strip in self._strips:
+            packets.append(gcm_strip_packet(strip, hsb, effect, _gcm_byte(speed), _gcm_byte(brightness)))
+            # The key cannot breathe or cycle: it keeps the effect's base color.
+            self._with_legion_key(packets, strip, hsb)
+        return self._send(packets)
 
 
 def build_armada_device(model, leds_dir, sysfs_root="/"):
