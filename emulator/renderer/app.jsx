@@ -78,7 +78,8 @@ const MODEL_GEOMETRY = {
 };
 
 function zoneCount(profile) {
-  const { type, targets } = profile.backend;
+  const { type, targets, strips } = profile.backend;
+  if (type === "gcmhid") return strips.length;
   return type === "multicolor" ? targets.length : targets.filter((target) => target.startsWith("red=")).length;
 }
 
@@ -96,8 +97,10 @@ function Device({ model, profile, led, canvasRef, videoRef, audioRef, mediaKind 
   const half = Math.ceil(colors.length / 2);
   const left = single ? colors : isOdin2 ? [colors[0]] : colors.slice(0, half);
   const right = single ? colors : isOdin2 ? [colors[2] || colors[0]] : colors.slice(half);
-  const leftSide = isOdin2 ? colors[1] : null;
-  const rightSide = isOdin2 ? colors[3] : null;
+  // Legion G9: one light strip on each side, no stick rings.
+  const sideStrips = profile.backend.type === "gcmhid";
+  const leftSide = isOdin2 ? colors[1] : sideStrips ? colors[0] : null;
+  const rightSide = isOdin2 ? colors[3] : sideStrips ? colors[1] : null;
   return <div className="device-stage">
     <div className="handheld">
       <div className="side-led left" style={{ background: leftSide ? `rgb(${leftSide.join(" ")})` : "transparent" }} />

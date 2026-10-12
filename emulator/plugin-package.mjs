@@ -55,7 +55,9 @@ export function inspectPluginZip(zipPath) {
   if (catalog.version !== 1 || !Array.isArray(catalog.profiles)) throw new Error("Unsupported Armada RGB catalog");
   const models = [];
   for (const profile of catalog.profiles) {
-    if (!Array.isArray(profile.models) || !profile.backend || !Array.isArray(profile.backend.targets)) {
+    const backend = profile.backend;
+    const lights = backend?.type === "gcmhid" ? backend.strips : backend?.targets;
+    if (!Array.isArray(profile.models) || !backend || !Array.isArray(lights)) {
       throw new Error("Invalid Armada RGB profile");
     }
     for (const model of profile.models) models.push({ model, profile });

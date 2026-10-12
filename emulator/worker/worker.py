@@ -44,6 +44,65 @@ def find_profile(catalog: dict, model: str) -> dict:
     raise ValueError(f"model is not present in plugin catalog: {model}")
 
 
+GCM_HIDRAW = "hidraw0"
+# Usage page 0xFF7A: the vendor interface armada_rgb looks for.
+GCM_DESCRIPTOR = bytes([0x06, 0x7A, 0xFF, 0x09, 0x01, 0xA1, 0x01])
+GCM_OFF = 0xFF
+_gcm_last: dict = {}
+
+
+def create_gcmhid(root: Path, backend: dict) -> None:
+    """A Legion G9 vendor hidraw node; its /dev entry is a plain file."""
+    device = root / "sys/class/hidraw" / GCM_HIDRAW / "device"
+    device.mkdir(parents=True, exist_ok=True)
+    (device / "uevent").write_text(
+        "HID_ID=0003:0000{}:0000{}\n".format(backend["vendor"].upper(), backend["product"].upper()),
+        encoding="ascii",
+    )
+    (device / "report_descriptor").write_bytes(GCM_DESCRIPTOR)
+    (root / "dev").mkdir(parents=True, exist_ok=True)
+    (root / "dev" / GCM_HIDRAW).write_bytes(b"")
+
+
+def _hsb_to_rgb(hue: int, saturation: int, brightness: int) -> list:
+    import colorsys
+
+    r, g, b = colorsys.hsv_to_rgb(hue / 255, min(100, saturation) / 100, min(100, brightness) / 100)
+    return [round(r * 255), round(g * 255), round(b * 255)]
+
+
+def read_gcmhid_state(root: Path, backend: dict) -> dict:
+    """Decode the GCM reports armada_rgb wrote: 00 05 <cmd> <len> 01 <strip> H S B <effect> ..."""
+    path = root / "dev" / GCM_HIDRAW
+    last = _gcm_last.setdefault(str(root), {})
+    try:
+        data = path.read_bytes()
+        # Keep the file small; the plugin appends with O_APPEND.
+        if len(data) > 65536:
+            path.write_bytes(b"")
+    except OSError:
+        data = b""
+    i = 0
+    while i + 3 <= len(data):
+        if data[i] != 0x00 or data[i + 1] != 0x05:
+            i += 1
+            continue
+        size = data[i + 3] + 1  # report id + payload + checksum
+        packet = data[i:i + size]
+        if len(packet) < 10:
+            break
+        target, hue, sat, bright = packet[5], packet[6], packet[7], packet[8]
+        effect = packet[9]
+        last[target] = [0, 0, 0] if effect == GCM_OFF else _hsb_to_rgb(hue, sat, bright)
+        i += size
+    strips = list(backend["strips"])
+    colors = [last.get(strip, [0, 0, 0]) for strip in strips]
+    raw = [{"strip": strip, "rgb": last.get(strip, [0, 0, 0])} for strip in strips]
+    if 0xC2 in last:
+        raw.append({"key": "legion", "rgb": last[0xC2]})
+    return {"colors": colors, "raw": raw, "backend": "gcmhid"}
+
+
 def create_virtual_sysfs(root: Path, model: str, profile: dict) -> None:
     model_path = root / "sys/firmware/devicetree/base/model"
     model_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +112,9 @@ def create_virtual_sysfs(root: Path, model: str, profile: dict) -> None:
     leds = root / "sys/class/leds"
     leds.mkdir(parents=True, exist_ok=True)
     backend = profile["backend"]
+    if backend["type"] == "gcmhid":
+        create_gcmhid(root, backend)
+        return
     if backend["type"] == "multicolor":
         names = backend["targets"]
     elif backend["type"] == "channels":
@@ -85,6 +147,8 @@ def _srgb_from_linear(value: float) -> int:
 def read_led_state(root: Path, profile: dict) -> dict:
     leds = root / "sys/class/leds"
     backend = profile["backend"]
+    if backend["type"] == "gcmhid":
+        return read_gcmhid_state(root, backend)
     raw = []
     colors = []
     if backend["type"] == "multicolor":
