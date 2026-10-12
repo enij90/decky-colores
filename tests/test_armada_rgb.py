@@ -224,6 +224,15 @@ def test_known_side_layouts_share_ambilight_by_side():
     assert layout[1]["region"] == [0.80, 0.45, 1.0, 1.0]
 
 
+def test_tb321fu_samples_a_narrow_band_weighted_to_the_edge():
+    model = "Lenovo Legion Y700 (2025) / TB321FU"
+    layout = layout_for_profile(model, profile_for_model(model), 2)
+
+    assert layout[0]["region"] == [0.0, 0.45, 0.10, 1.0]
+    assert layout[1]["region"] == [0.90, 0.45, 1.0, 1.0]
+    assert {group["falloff"] for group in layout} == {1.5}
+
+
 def test_odin3_eight_zone_channel_frames_are_serialized(tmp_path, monkeypatch):
     profile = profile_for_model("AYN Odin 3")
     for target in profile["backend"]["targets"]:

@@ -637,6 +637,13 @@ def build_armada_device(model, leds_dir, sysfs_root="/"):
 
 
 _SIDE_REGION_TOP = 0.45
+_SIDE_REGION_WIDTH = 0.20
+# Per model: a narrower band weighted towards the screen edge, so the strips
+# follow what is next to them rather than the middle of the scene. Checked on
+# the TB321FU with the Legion G9 (a 5 % colored edge is picked up).
+_SIDE_TUNING = {
+    "Lenovo Legion Y700 (2025) / TB321FU": {"width": 0.10, "falloff": 1.5},
+}
 
 
 def layout_for_profile(model, profile, zones):
@@ -657,20 +664,25 @@ def layout_for_profile(model, profile, zones):
     }
     if model in side_models and zones > 1 and zones % 2 == 0:
         half = zones // 2
+        tuning = _SIDE_TUNING.get(model, {})
+        width = tuning.get("width", _SIDE_REGION_WIDTH)
+        falloff = tuning.get("falloff", 0.0)
         # The side lights sit on the lower half of the grips, so sample only the
         # lower part of each screen edge instead of its full height.
         return [
             {
                 "name": "Left lights",
-                "region": [0.0, _SIDE_REGION_TOP, 0.20, 1.0],
+                "region": [0.0, _SIDE_REGION_TOP, width, 1.0],
                 "zones": list(range(half)),
                 "kind": "shared-edge",
+                "falloff": falloff,
             },
             {
                 "name": "Right lights",
-                "region": [0.80, _SIDE_REGION_TOP, 1.0, 1.0],
+                "region": [1.0 - width, _SIDE_REGION_TOP, 1.0, 1.0],
                 "zones": list(range(half, zones)),
                 "kind": "shared-edge",
+                "falloff": falloff,
             },
         ]
     return [

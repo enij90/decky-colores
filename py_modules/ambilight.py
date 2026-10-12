@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import platform
 import subprocess
+import time
 from dataclasses import replace
 
 from run_as_user import user_env, user_cred
@@ -49,6 +50,52 @@ _VENDOR_HASHES = {
 }
 
 _FULL_REGION = [0.0, 0.0, 1.0, 1.0]
+# Optional live tuning of the shared-edge (side light) sampling, re-read when
+# it changes: {"width": 0.2, "top": 0.45, "bottom": 1.0, "method": "dominant",
+# "falloff": 0.0, "min_share": 0.05}. "falloff" > 0 weighs pixels near the
+# screen edge more ((1 - distance) ** falloff across the band).
+_TUNE_PATH = Path("/var/tmp/colores-tune.json")
+_tune_cache = {"mtime": None, "checked": 0.0, "values": {}}
+
+
+def edge_tuning():
+    now = time.monotonic()
+    if now - _tune_cache["checked"] < 1.0:
+        return _tune_cache["values"]
+    _tune_cache["checked"] = now
+    try:
+        mtime = _TUNE_PATH.stat().st_mtime
+    except OSError:
+        _tune_cache.update(mtime=None, values={})
+        return {}
+    if mtime != _tune_cache["mtime"]:
+        try:
+            values = json.loads(_TUNE_PATH.read_text())
+            if not isinstance(values, dict):
+                values = {}
+        except (OSError, ValueError):
+            values = {}
+        _tune_cache.update(mtime=mtime, values=values)
+        logger.info("ambilight edge tuning: %s", values)
+    return _tune_cache["values"]
+
+
+def tuned_edge_region(region, tune):
+    """Apply width/top/bottom overrides to a left or right edge region."""
+    x0, y0, x1, y1 = region
+    width = tune.get("width")
+    if isinstance(width, (int, float)) and 0 < width <= 0.5:
+        if x0 <= 0.0:
+            x0, x1 = 0.0, float(width)
+        else:
+            x0, x1 = 1.0 - float(width), 1.0
+    top = tune.get("top")
+    if isinstance(top, (int, float)) and 0 <= top < 1:
+        y0 = float(top)
+    bottom = tune.get("bottom")
+    if isinstance(bottom, (int, float)) and y0 < bottom <= 1:
+        y1 = float(bottom)
+    return [x0, y0, x1, y1]
 
 
 @dataclass(frozen=True)
@@ -203,34 +250,40 @@ def avg_region(frame, width, height, region):
     return (r // n, g // n, b // n)
 
 
-def dominant_region(frame, width, height, region):
+def dominant_region(frame, width, height, region, falloff=0.0, min_share=0.05):
     """Pick the prevalent visible hue instead of washing mixed colors to gray."""
     x0, y0, x1, y1 = region
     cx0 = max(0, int(x0 * width))
     cx1 = min(width, max(cx0 + 1, int(x1 * width)))
     cy0 = max(0, int(y0 * height))
     cy1 = min(height, max(cy0 + 1, int(y1 * height)))
+    # Distance from the screen edge the band touches, 0 at the edge.
+    from_left = x0 <= 0.0
+    span = max(1, cx1 - cx0)
     buckets = [[] for _ in range(12)]
-    pixel_count = max(1, (cx1 - cx0) * (cy1 - cy0))
-    for y in range(cy0, cy1):
-        base = y * width * 3
-        for x in range(cx0, cx1):
-            i = base + x * 3
+    total_weight = 0.0
+    for x in range(cx0, cx1):
+        distance = ((x - cx0) if from_left else (cx1 - 1 - x)) / span
+        weight = (1.0 - distance) ** falloff if falloff > 0 else 1.0
+        for y in range(cy0, cy1):
+            total_weight += weight
+            i = (y * width + x) * 3
             color = (frame[i], frame[i + 1], frame[i + 2])
             highest = max(color)
             chroma = highest - min(color)
             if highest < 24 or chroma < 32:
                 continue
             hue, _, _ = colorsys.rgb_to_hsv(*(channel / 255 for channel in color))
-            buckets[min(11, int(hue * 12))].append((color, chroma))
+            buckets[min(11, int(hue * 12))].append((color, chroma * weight, weight))
 
-    winner = max(buckets, key=len)
-    if len(winner) < max(3, (pixel_count + 19) // 20):
+    winner = max(buckets, key=lambda bucket: sum(w for _, _, w in bucket))
+    winner_weight = sum(w for _, _, w in winner)
+    if len(winner) < 3 or winner_weight < total_weight * min_share:
         return avg_region(frame, width, height, region)
 
-    weight = sum(chroma for _, chroma in winner)
+    weight = sum(chroma for _, chroma, _ in winner)
     return tuple(
-        round(sum(color[channel] * chroma for color, chroma in winner) / weight)
+        round(sum(color[channel] * chroma for color, chroma, _ in winner) / weight)
         for channel in range(3)
     )
 
@@ -575,15 +628,22 @@ class Ambilight:
                         self._targets[zone] = target
                 continue
             if group.get("kind") == "shared-edge":
-                target = boost_saturation(
-                    dominant_region(
+                tune = edge_tuning()
+                region = tuned_edge_region(region, tune)
+                if tune.get("method") == "average":
+                    sampled = avg_region(
+                        frame, self._capture_width, self._capture_height, region
+                    )
+                else:
+                    sampled = dominant_region(
                         frame,
                         self._capture_width,
                         self._capture_height,
                         region,
-                    ),
-                    sat,
-                )
+                        falloff=float(tune.get("falloff", group.get("falloff", 0.0)) or 0.0),
+                        min_share=float(tune.get("min_share", 0.05)),
+                    )
+                target = boost_saturation(sampled, sat)
                 for zone in indices:
                     if 0 <= zone < self._zones:
                         self._targets[zone] = target
