@@ -8,6 +8,8 @@ from py_modules.ambilight import (
     CAP_W,
     CAP_H,
     CaptureBackend,
+    SourceConsumers,
+    _decode_json_stream,
     _gst_command,
     _native_env,
     _read_latest_frames,
@@ -27,6 +29,11 @@ from py_modules.ambilight import (
 def _capture_backend(monkeypatch):
     backend = CaptureBackend("test", "/usr/bin/pw-dump", "/usr/bin/gst-launch-1.0")
     monkeypatch.setattr(ambilight_mod, "resolve_capture_backend", lambda: backend)
+
+    async def _no_monitor(self):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(Ambilight, "_watch_consumers", _no_monitor)
 
 
 def _split_frame():
@@ -430,3 +437,113 @@ def test_subdivide_splits_region_horizontally():
 
 def test_subdivide_single_returns_region():
     assert subdivide([0.1, 0.2, 0.3, 0.4], 1) == [(0.1, 0.2, 0.3, 0.4)]
+
+
+def _link(oid, src, dst):
+    return {"id": oid, "type": "PipeWire:Interface:Link",
+            "info": {"output-node-id": src, "input-node-id": dst}}
+
+
+def _node(oid, name, client):
+    return {"id": oid, "type": "PipeWire:Interface:Node",
+            "info": {"props": {"node.name": name, "client.id": client}}}
+
+
+def _client(oid, pid):
+    return {"id": oid, "type": "PipeWire:Interface:Client",
+            "info": {"props": {"application.process.id": pid}}}
+
+
+def test_source_consumers_tracks_other_readers_until_they_leave():
+    consumers = SourceConsumers()
+    consumers.update([_node(56, "colores-ambilight", 74), _link(75, 48, 56)])
+    assert consumers.others(48) == []
+
+    consumers.update([_client(80, 4321), _node(90, "steam", 80), _link(91, 48, 90)])
+    assert consumers.others(48) == [90]
+    assert consumers.others(60) == []
+
+    consumers.update([{"id": 91, "info": None}])
+    assert consumers.others(48) == []
+
+
+def test_source_consumers_recognises_own_capture_by_process():
+    # pipewiresrc names its node after gst-launch, not after us.
+    consumers = SourceConsumers()
+    consumers.update([_client(70, 1234), _node(71, "gst-launch-1.0", 70), _link(72, 48, 71)])
+    assert consumers.others(48) == [71]
+    assert consumers.others(48, own_pid=1234) == []
+
+
+def test_decode_json_stream_waits_for_complete_values():
+    seen = []
+    decoder = ambilight_mod.json.JSONDecoder()
+    text = '[\n  {"id": 1}\n]\n[\n  {"id": 2, "info": null}\n]\n'
+    rest = _decode_json_stream(text[:20], decoder, seen.append)
+    assert seen == [[{"id": 1}]]
+    rest = _decode_json_stream(rest + text[20:], decoder, seen.append)
+    assert seen == [[{"id": 1}], [{"id": 2, "info": None}]]
+    assert rest == ""
+
+
+def test_run_steps_aside_while_another_client_reads_gamescope(monkeypatch):
+    # Steam Remote Play reads the same gamescope stream: capturing then would
+    # shrink its frames to ours, so wait (showing the fallback) until it leaves.
+    monkeypatch.setattr(ambilight_mod, "SHARED_CHECK_INTERVAL", 0.001)
+    monkeypatch.setattr(ambilight_mod, "SHARED_RESUME_DELAY", 0.005)
+    monkeypatch.setattr(ambilight_mod, "RETRY_INTERVAL", 0.001)
+    started = []
+
+    async def _no_capture(*command, **_kwargs):
+        started.append(command)
+        raise OSError("no capture in tests")
+
+    monkeypatch.setattr(ambilight_mod.asyncio, "create_subprocess_exec", _no_capture)
+    applied = []
+    amb = Ambilight(lambda colors: applied.append(list(colors)), zones=2, runtime_dir=None)
+
+    async def _node_48():
+        return 48
+
+    amb._find_node = _node_48
+    amb._consumers.update([_node(90, "steam", 80), _link(91, 48, 90)])
+
+    async def drive():
+        amb.start({"fps": 10, "fallback": (1, 2, 3)})
+        task = amb._task
+        await asyncio.sleep(0.03)
+        assert amb.status == "shared"
+        assert applied and applied[0] == [(1, 2, 3)] * 2
+        assert started == []
+
+        amb._consumers.update([{"id": 91, "info": None}])
+        await asyncio.sleep(0.05)
+        assert started
+        amb.stop()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(drive())
+
+
+def test_release_lets_pw_capture_hand_the_stream_back():
+    # SIGTERM, not SIGKILL: pw_capture.py renegotiates gamescope to full size
+    # before it disconnects, so a reader that stays is not left with our size.
+    class FakeProcess:
+        returncode = None
+        terminated = False
+
+        def terminate(self):
+            self.terminated = True
+
+        async def wait(self):
+            self.returncode = 0
+
+    amb = Ambilight(lambda colors: None, zones=1, runtime_dir=None)
+    amb._backend = CaptureBackend("test", "/usr/bin/pw-dump", "", python="/usr/bin/python3")
+    process = FakeProcess()
+    asyncio.run(amb._release(process))
+    assert process.terminated
+    assert process.returncode == 0

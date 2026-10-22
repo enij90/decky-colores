@@ -29,6 +29,15 @@ RETRY_INTERVAL = 3.0
 MAX_RETRY_INTERVAL = 30.0
 STABLE_CAPTURE_INTERVAL = 15.0
 MAX_CAPTURE_FPS = 60
+# gamescope exposes one PipeWire stream and sizes it for its consumers: while
+# our small capture is linked, another reader (Steam Remote Play) gets our tiny
+# frames. Step aside while anyone else reads the node, and come back
+# SHARED_RESUME_DELAY seconds after the last one leaves.
+OWN_NODE_NAME = "colores-ambilight"
+SHARED_CHECK_INTERVAL = 1.0
+SHARED_RESUME_DELAY = 2.0
+# pw_capture.py hands the stream back at full size on SIGTERM (see there).
+RELEASE_TIMEOUT = 2.0
 
 _NATIVE_ENV_KEYS = (
     "LD_LIBRARY_PATH",
@@ -338,6 +347,60 @@ async def _read_latest_frames(reader, frame_bytes, queue):
         _replace_with_latest(queue, error)
 
 
+class SourceConsumers:
+    """Who reads which PipeWire node, kept up to date from `pw-dump --monitor`."""
+
+    def __init__(self):
+        self.links = {}
+        self.nodes = {}
+        self.clients = {}
+
+    def update(self, objects):
+        for obj in objects:
+            oid = obj.get("id")
+            info = obj.get("info")
+            if info is None:
+                for table in (self.links, self.nodes, self.clients):
+                    table.pop(oid, None)
+                continue
+            kind = obj.get("type") or ""
+            props = info.get("props")
+            if kind.endswith(":Link"):
+                self.links[oid] = (info.get("output-node-id"), info.get("input-node-id"))
+            elif kind.endswith(":Node") and props is not None:
+                self.nodes[oid] = (props.get("node.name"), props.get("client.id"))
+            elif kind.endswith(":Client") and props is not None:
+                self.clients[oid] = props.get("application.process.id")
+
+    def _is_own(self, node, own_pid):
+        name, client = self.nodes.get(node, (None, None))
+        if name == OWN_NODE_NAME:
+            return True
+        pid = self.clients.get(client)
+        return own_pid is not None and pid is not None and int(pid) == own_pid
+
+    def others(self, source, own_pid=None):
+        """Nodes other than our capture that are linked to `source`."""
+        return sorted({
+            dst for src, dst in self.links.values()
+            if src == source and not self._is_own(dst, own_pid)
+        })
+
+
+def _decode_json_stream(buf, decoder, on_value):
+    """Feeds every complete top-level JSON value in buf to on_value; returns the rest."""
+    while True:
+        rest = buf.lstrip()
+        if not rest:
+            return ""
+        try:
+            value, end = decoder.raw_decode(rest)
+        except ValueError:
+            return rest
+        on_value(value)
+        buf = rest[end:]
+
+
 class Ambilight:
     def __init__(self, apply_zones, zones, runtime_dir, uid=None, gid=None, layout=None, max_fps=None):
         self._apply = apply_zones
@@ -357,6 +420,8 @@ class Ambilight:
         self._capture_height = ODIN2_CAP_H if self._adaptive_zones else CAP_H
         self._task = None
         self._proc = None
+        self._watch_task = None
+        self._consumers = SourceConsumers()
         self._options = {}
         self._active = False
         self.status = "idle"
@@ -466,6 +531,9 @@ class Ambilight:
             logger.info("ambilight worker stop requested")
             self._task.cancel()
             self._task = None
+        if self._watch_task is not None:
+            self._watch_task.cancel()
+            self._watch_task = None
         self._kill()
 
     async def stop_and_wait(self):
@@ -489,6 +557,75 @@ class Ambilight:
                 pass
             self._proc = None
 
+    async def _watch_consumers(self):
+        # One long-lived `pw-dump --monitor`: it prints only what changes, so
+        # watching the links costs nothing while the graph is idle.
+        while True:
+            proc = None
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    self._backend.pw_dump, "--monitor", "--no-colors",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    env=self._env(),
+                    **self._cred(),
+                )
+                decoder = json.JSONDecoder()
+                buf = ""
+                while True:
+                    chunk = await proc.stdout.read(65536)
+                    if not chunk:
+                        break
+                    buf = _decode_json_stream(
+                        buf + chunk.decode(errors="replace"), decoder,
+                        lambda value: self._consumers.update(
+                            value if isinstance(value, list) else [value]),
+                    )
+            except OSError as error:
+                logger.warning("pw-dump monitor failed: %s", error)
+            finally:
+                if proc is not None:
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+                    await asyncio.gather(proc.wait(), return_exceptions=True)
+            self._consumers = SourceConsumers()
+            await asyncio.sleep(RETRY_INTERVAL)
+
+    def _shared(self, node, proc=None):
+        return self._consumers.others(node, proc.pid if proc is not None else None)
+
+    async def _release(self, proc):
+        if not self._backend.python or proc.returncode is not None:
+            return
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            await asyncio.wait_for(proc.wait(), RELEASE_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning("ambilight capture did not release the stream in time")
+
+    async def _wait_until_unshared(self, node):
+        logger.info("ambilight paused: gamescope node %s also read by %s",
+                    node, self._shared(node))
+        self.status = "shared" if self._active else "paused"
+        if self._active:
+            self._apply(self._fallback())
+        quiet_since = None
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(SHARED_CHECK_INTERVAL)
+            if self._shared(node):
+                quiet_since = None
+            elif quiet_since is None:
+                quiet_since = loop.time()
+            elif loop.time() - quiet_since >= SHARED_RESUME_DELAY:
+                logger.info("ambilight resuming: gamescope node %s is ours again", node)
+                return
+
     async def _run(self):
         # Outer reconnect loop: keep trying to find the gamescope source and capture it
         # until stop() cancels us. The source can be absent at boot (session not up yet)
@@ -505,6 +642,8 @@ class Ambilight:
                     await asyncio.sleep(RETRY_INTERVAL)
                     continue
                 logger.info("ambilight capture backend: %s", self._backend.name)
+            if self._watch_task is None and self._backend.pw_dump:
+                self._watch_task = asyncio.create_task(self._watch_consumers())
             node = await self._find_node()
             if node is None:
                 logger.warning("gamescope PipeWire node not found; retrying")
@@ -512,6 +651,10 @@ class Ambilight:
                 if self._active:
                     self._apply(self._fallback())
                 await asyncio.sleep(RETRY_INTERVAL)
+                continue
+
+            if self._shared(node):
+                await self._wait_until_unshared(node)
                 continue
 
             interval = self._capture_interval()
@@ -531,6 +674,7 @@ class Ambilight:
                 )
             proc = None
             reader_task = None
+            shared = False
             logger.info("ambilight start: node=%s fps=%.0f", node, 1.0 / interval)
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -547,8 +691,18 @@ class Ambilight:
                     _read_latest_frames(proc.stdout, frame_bytes, frames)
                 )
                 capture_started = asyncio.get_running_loop().time()
+                shared = False
                 while True:
-                    frame = await frames.get()
+                    try:
+                        frame = await asyncio.wait_for(frames.get(), SHARED_CHECK_INTERVAL)
+                    except asyncio.TimeoutError:
+                        frame = None
+                    if self._shared(node, proc):
+                        shared = True
+                        await self._release(proc)
+                        break
+                    if frame is None:
+                        continue
                     if isinstance(frame, Exception):
                         raise frame
                     if (
@@ -582,6 +736,9 @@ class Ambilight:
                     await asyncio.gather(proc.wait(), return_exceptions=True)
                 if self._proc is proc:
                     self._proc = None
+            if shared:
+                await self._wait_until_unshared(node)
+                continue
             logger.warning("ambilight reconnect scheduled in %.1fs", retry_delay)
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, MAX_RETRY_INTERVAL)

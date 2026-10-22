@@ -10,10 +10,16 @@ can dequeue a free buffer. This client asks gamescope for a small frame
 (SPA_FORMAT_VIDEO_requested_size, a gamescope extension) and keeps every buffer but
 one, handing that one back once per frame interval: gamescope then paints FPS small
 frames per second instead of a full-size frame per refresh.
+
+gamescope has a single stream, so every other reader (Steam Remote Play) shares
+the small size we asked for, and keeps it after we leave. On SIGTERM the client
+first asks for a full-size frame again, so gamescope renegotiates the stream for
+the readers that stay, and only then disconnects.
 """
 import ctypes
 import ctypes.util
 import operator
+import signal
 import struct
 import sys
 import threading
@@ -61,6 +67,10 @@ PW_STREAM_STATE_STREAMING = 3
 
 SAMPLES = 2
 CONNECT_TIMEOUT = 5.0
+# On release: a requested size gamescope clamps to its full output, and the time
+# the renegotiation takes before we disconnect.
+RELEASE_SIZE = (8192, 8192)
+RELEASE_SETTLE = 0.3
 
 
 def _pod(type_, body):
@@ -232,6 +242,7 @@ def capture(target, out_w, out_h, fps, out=None):
     pw.pw_stream_dequeue_buffer.restype = ctypes.POINTER(_PwBuffer)
     pw.pw_stream_dequeue_buffer.argtypes = [vp]
     pw.pw_stream_queue_buffer.argtypes = [vp, vp]
+    pw.pw_stream_update_params.argtypes = [vp, vp, ctypes.c_uint32]
     pw.pw_stream_disconnect.argtypes = [vp]
     pw.pw_stream_destroy.argtypes = [vp]
 
@@ -248,7 +259,10 @@ def capture(target, out_w, out_h, fps, out=None):
     # the main thread only touches it with the loop lock held.
     state = {"format": None, "code": 0, "streaming": False, "plan": (None, None), "held": []}
     done = threading.Event()
+    release = threading.Event()
     interval = 1.0 / max(1, fps)
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, lambda *_: (release.set(), done.set()))
 
     def quit(code):
         if state["code"] == 0:
@@ -375,6 +389,12 @@ def capture(target, out_w, out_h, fps, out=None):
     for buf in state["held"]:
         pw.pw_stream_queue_buffer(stream, buf)
     state["held"] = []
+    if release.is_set() and state["streaming"]:
+        full = ctypes.create_string_buffer(enum_format_pod(RELEASE_SIZE))
+        pw.pw_stream_update_params(stream, (ctypes.c_void_p * 1)(ctypes.addressof(full)), 1)
+        pw.pw_thread_loop_unlock(loop)
+        time.sleep(RELEASE_SETTLE)
+        pw.pw_thread_loop_lock(loop)
     pw.pw_stream_disconnect(stream)
     pw.pw_stream_destroy(stream)
     pw.pw_thread_loop_unlock(loop)
