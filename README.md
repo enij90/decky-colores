@@ -1,115 +1,116 @@
 # Colores ✨ — Armada OS ready
 
-Control de luces RGB para PCs portátiles, como plugin de [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader).
+RGB lighting control for handheld PCs, as a [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin.
 
-Español · [English](README.en.md)
+[Español](README.es.md) · English
 
-## Compatibilidad con Armada OS
+## Armada OS compatibility
 
-Colores ya está preparado para funcionar de forma nativa en Armada OS:
+Colores is now ready to run natively on Armada OS:
 
-- **Audio reactivo estable.** Usa las herramientas nativas del host, sigue automáticamente los cambios de salida de audio y reconecta la captura sin reiniciar el plugin.
-- **Ambilight en ARM64 y entornos FEX.** Detecta un backend PipeWire/GStreamer completo y, cuando hace falta, utiliza el fallback ARM64 incluido y verificado mediante checksums.
-- **RGB nativo para la familia Armada.** Usa los perfiles de hardware de Armada OS para controlar por zona AYN Odin 2, Odin 3, Portal y Thor; Retroid Pocket; KONKR Pocket FIT Elite; y MANGMI, conservando corrección de color, brillo y Ambilight según la topología conocida.
-- **Mando Lenovo Legion G9 (Legion Tab Gen 3).** Controla las dos tiras de los grips por HID y el botón Legion. Con el [firmware per-LED del G9](https://github.com/enij90/legion-g9-firmware), experimental, el Ambilight toma 5 muestras por lado y controla cada uno de los 10 LEDs por separado; se activa creando un archivo vacío `g9-perled` en la carpeta de ajustes del plugin (`~/homebrew/settings/Colores/`) y reiniciando Decky. Sin ese firmware, no lo actives: el firmware original pinta la tira entera.
-- **Plasmoide Armada OS para Plasma 6.** El source incluye un widget instalable
-  que reúne el interruptor de las luces RGB y los perfiles Eco, Balanced y
-  Performance. Sigue el idioma configurado en Plasma y se distribuye como
-  `Armada-OS.plasmoid`; consulta su [documentación e instalación](armada/README.md).
-- **Emulador de hardware Armada.** La herramienta ARM64 incluida en
-  [`emulator/`](emulator/README.md) carga un ZIP real de Colores, ejecuta su UI
-  y backend y muestra los LEDs sobre una consola virtual. Incluye patrones,
-  video y audio para probar Ambilight y el modo reactivo sin hardware físico.
+- **Reliable audio-reactive lighting.** It uses the host's native tools, automatically follows audio output changes, and reconnects capture without restarting the plugin.
+- **Ambilight on ARM64 and FEX environments.** It detects a complete PipeWire/GStreamer backend and, when needed, uses the bundled ARM64 fallback verified with checksums.
+- **Native RGB for the Armada family.** It uses Armada OS hardware profiles for per-zone control on AYN Odin 2, Odin 3, Portal, and Thor; Retroid Pocket; KONKR Pocket FIT Elite; and MANGMI, preserving color correction, brightness, and Ambilight for each known topology.
+- **Lenovo Legion G9 controller (Legion Tab Gen 3).** Drives the two grip light strips over HID and the Legion button. With the experimental [G9 per-LED firmware](https://github.com/enij90/legion-g9-firmware), Ambilight takes 5 samples per side and drives each of the 10 LEDs on its own; enable it by creating an empty `g9-perled` file in the plugin settings folder (`~/homebrew/settings/Colores/`) and restarting Decky. Do not enable it on the stock firmware, which paints the whole strip.
+- **Armada OS plasmoid for Plasma 6.** The source includes an installable widget
+  combining the RGB light switch with the Eco, Balanced, and Performance
+  profiles. It follows Plasma's configured language and is distributed as
+  `Armada-OS.plasmoid`; see its [documentation and installation guide](armada/README.en.md).
+- **Armada hardware emulator.** The ARM64 tool under
+  [`emulator/`](emulator/README.en.md) loads a real Colores ZIP, runs its UI and
+  backend, and renders the LEDs on a virtual handheld. Built-in patterns, video,
+  and audio exercise Ambilight and audio-reactive mode without physical hardware.
 
 <p align="center">
-  <a href="https://ko-fi.com/hooandee"><img src="https://img.shields.io/badge/Ko--fi-Inv%C3%ADtame%20un%20caf%C3%A9-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
-  <a href="https://www.patreon.com/hooandee"><img src="https://img.shields.io/badge/Patreon-Ap%C3%B3yame-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon"></a>
-  <a href="https://www.youtube.com/channel/UCDsSJByXklp6xc_WwQJI7Lw/join"><img src="https://img.shields.io/badge/YouTube-Hazte%20miembro-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube"></a>
-  <a href="https://discord.gg/x2ZNARy"><img src="https://img.shields.io/badge/Discord-%C3%9Anete-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://linktr.ee/hooandee"><img src="https://img.shields.io/badge/Todos%20mis%20enlaces-Linktree-43E660?style=for-the-badge&logo=linktree&logoColor=white" alt="Linktree"></a>
+  <a href="https://ko-fi.com/hooandee"><img src="https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
+  <a href="https://www.patreon.com/hooandee"><img src="https://img.shields.io/badge/Patreon-Support%20me-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon"></a>
+  <a href="https://www.youtube.com/channel/UCDsSJByXklp6xc_WwQJI7Lw/join"><img src="https://img.shields.io/badge/YouTube-Become%20a%20member-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube"></a>
+  <a href="https://discord.gg/x2ZNARy"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://linktr.ee/hooandee"><img src="https://img.shields.io/badge/All%20my%20links-Linktree-43E660?style=for-the-badge&logo=linktree&logoColor=white" alt="Linktree"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Hooandee/decky-colores/actions/workflows/ci.yml"><img src="https://github.com/Hooandee/decky-colores/actions/workflows/ci.yml/badge.svg" alt="Estado del CI"></a>
-  <a href="https://github.com/Hooandee/decky-colores/releases/latest"><img src="https://img.shields.io/github/v/release/Hooandee/decky-colores?label=%C3%BAltima%20versi%C3%B3n&color=blue" alt="Última versión"></a>
+  <a href="https://github.com/Hooandee/decky-colores/actions/workflows/ci.yml"><img src="https://github.com/Hooandee/decky-colores/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/Hooandee/decky-colores/releases/latest"><img src="https://img.shields.io/github/v/release/Hooandee/decky-colores?label=latest%20release&color=blue" alt="Latest release"></a>
 </p>
 
-Colores detecta tu consola al arrancar y te muestra solo lo que tu máquina puede hacer de verdad. Sin configuración, sin tocar archivos, sin elegir tu modelo en una lista. Lo abres desde el menú de acceso rápido y ya está.
+Colores detects your handheld at startup and shows you only what your machine can actually do. No config, no editing files, no picking your model from a list. Open it from the quick access menu and you're set.
 
-## Vídeo
+## Video
 
-En este vídeo enseño y explico el plugin a fondo:
+In this video I show and explain the plugin in depth:
 
-[![Colores en acción](https://img.youtube.com/vi/ug5Nh0YtadE/maxresdefault.jpg)](https://youtu.be/ug5Nh0YtadE)
+[![Colores in action](https://img.youtube.com/vi/ug5Nh0YtadE/maxresdefault.jpg)](https://youtu.be/ug5Nh0YtadE)
 
-## Dispositivos compatibles
+## Supported devices
 
-| Marca | Modelos | Detalles |
+| Brand | Models | Notes |
 | --- | --- | --- |
-| ASUS ROG | Ally, Ally X, Xbox Ally, Xbox Ally X | 4 zonas RGB en los anillos de los joysticks |
-| Lenovo Legion | Go, Go 2, Go S | Color por mando, botón de reconexión (ver más abajo) |
-| MSI | Claw, Claw 8 AI+ | 9 zonas |
+| ASUS ROG | Ally, Ally X, Xbox Ally, Xbox Ally X | 4 RGB zones around the joystick rings |
+| Lenovo Legion | Go, Go 2, Go S | Per-controller color, reconnect button (see below) |
+| Lenovo Legion | Legion Tab Gen 3 (Y700 2025) with the Legion G9 controller | One color per grip strip, Legion button; 10 separate LEDs with the [per-LED firmware](https://github.com/enij90/legion-g9-firmware) |
+| MSI | Claw, Claw 8 AI+ | 9 zones |
 
-¿Tu consola no está en la lista? Colores intenta usarla igualmente leyendo los LEDs que el sistema expone. Verás esas funciones marcadas como experimentales: puedes probarlas, pero puede que no respondan bien hasta que tenga esa máquina entre manos para calibrarla. Si ni siquiera hay LEDs que controlar, el plugin te lo dice y no se queda colgado.
+Not on the list? Colores still tries to use your device by reading whatever LEDs the system exposes. Those features show up marked as experimental: you can try them, but they may not behave well until I get that machine in hand to calibrate it. If there are no controllable LEDs at all, the plugin tells you instead of hanging.
 
-## Qué puedes hacer
+## What you can do
 
-- **Color fijo.** Elige un tono y una saturación. Lo más simple y lo que casi todo el mundo quiere.
-- **Brillo.** En las consolas que lo permiten.
-- **Degradados.** Un editor con presets (Atardecer, Océano, Aurora, Lava, Galaxia y más), ajuste color a color por zona, una paleta automática y un botón de "Sorpréndeme" para cuando no te decidas. Puedes guardar tus degradados favoritos y reutilizarlos.
-- **Efectos.** Respiración, arcoíris, onda, ciclo y espiral. Los efectos de color usan tu color fijo, y varios pueden correr sobre tu degradado personalizado si activas esa opción.
-- **Ambilight.** Las luces siguen lo que pasa en pantalla, tomando el color de la zona cercana a cada joystick. Tiene controles de intensidad, suavizado y tasa de captura.
-- **Español, inglés, italiano, alemán y portugués de Brasil.** Cambias de idioma desde un selector compacto en Ajustes. El plugin arranca en español.
+- **Solid color.** Pick a hue and saturation. The simplest option, and what most people want.
+- **Brightness.** On devices that support it.
+- **Gradients.** An editor with presets (Sunset, Ocean, Aurora, Lava, Galaxy and more), per-zone color tuning, an auto palette, and a "Surprise me" button for when you can't decide. You can save your favorite gradients and reuse them.
+- **Effects.** Breathing, rainbow, wave, cycle and spiral. Color effects use your solid color, and several can run over your custom gradient if you turn that on.
+- **Ambient (Ambilight).** The lights follow what's on screen, taking color from the region near each joystick. It has vividness, smoothing and capture-rate controls.
+- **Spanish, English, Italian, German, and Brazilian Portuguese.** Switch language from a compact selector in Settings. The plugin starts in Spanish.
 
-Todo se adapta a tu consola. Si tu máquina solo tiene un color global, no te muestro un editor de zonas que no va a hacer nada.
+Everything adapts to your handheld. If your machine only has a single global color, I won't show you a zone editor that wouldn't do anything.
 
-## Cosas a tener en cuenta
+## Things to keep in mind
 
-- **Ambilight solo funciona en Modo Juego con un juego abierto.** Necesita leer la imagen que compone Modo Juego. En Escritorio o en Big Picture no hay nada que capturar, y el plugin te lo avisa con un mensaje en pantalla en lugar de fallar en silencio.
+- **Ambient only works in Game Mode with a game running.** It needs to read the image Game Mode composites. In Desktop or Big Picture there's nothing to capture, and the plugin warns you on screen instead of failing silently.
 
-- **Legion Go: los mandos se desconectan al suspender.** Cuando la consola se duerme y vuelve, los mandos a veces pierden el canal por el que reciben los colores. Por eso hay un botón **Reconectar mandos**: si las luces dejan de responder después de suspender, púlsalo y vuelven a la vida. No es un fallo del plugin, es cómo se comportan esos mandos.
+- **Legion Go: controllers disconnect after sleep.** When the handheld sleeps and wakes, the controllers sometimes lose the channel they receive colors on. That's why there's a **Reconnect controllers** button: if the lights stop responding after sleep, press it and they come back. It's not a plugin bug, it's how those controllers behave.
 
-- **Legion Go: un solo color por mando.** El firmware de estas consolas no permite varios colores a la vez en un mismo mando, así que el degradado se ve como un fundido suave entre colores en lugar de zonas separadas. La espiral, además, es el efecto giratorio propio del firmware ("Espiral GO").
+- **Legion Go: one color per controller.** The firmware on these machines doesn't allow multiple colors at once on a single controller, so a gradient shows as a smooth crossfade between colors rather than separate zones. The spiral is also the controller's own firmware rotating effect ("Spiral GO").
 
-- **Consolas no listadas.** Las funciones experimentales son justo eso, experimentales. Si tienes una máquina que no aparece arriba y quieres ayudar a darle soporte, abre un issue y lo veo 🙌.
+- **Unlisted devices.** Experimental features are exactly that, experimental. If you have a machine that isn't above and want to help add support, open an issue and I will take a look 🙌.
 
-## Instalación
+## Installation
 
-Desde la tienda de plugins de Decky es la forma más cómoda cuando esté disponible. Para instalar a mano:
+The Decky plugin store is the easiest route when available. To install manually:
 
-1. Descarga `Colores.zip` desde la [última release](https://github.com/Hooandee/decky-colores/releases/latest).
-2. En Decky, activa el modo desarrollador e instala el zip desde la opción de instalar desde archivo.
+1. Download `Colores.zip` from the [latest release](https://github.com/Hooandee/decky-colores/releases/latest).
+2. In Decky, enable developer mode and install the zip from the install-from-file option.
 
-Colores necesita permisos de root para escribir en los LEDs del sistema. Decky te lo pedirá al instalar.
+Colores needs root to write to the system LEDs. Decky will prompt you for it at install.
 
-## Saca más partido a tu consola
+## Get more out of your handheld
 
-Hago vídeos sobre Handheld PCs, trucos, ajustes y cómo exprimir estas pequeñajas. Si Colores te ha gustado, pásate por mi canal: [youtube.com/@Hooandee](https://www.youtube.com/@Hooandee).
+I make videos about handheld PCs, tips, tweaks and how to squeeze the most out of these machines. If you like Colores, swing by the channel: [youtube.com/@Hooandee](https://www.youtube.com/@Hooandee).
 
-## Agradecimientos
+## Acknowledgements
 
-El motor de control de luces por dispositivo está adaptado de [HueSync](https://github.com/honjow/HueSync), de honjow, publicado bajo licencia BSD 3-Clause. Su trabajo en los drivers de cada marca es lo que hace posible que Colores hable con tantas consolas distintas, y conservo su aviso de copyright como pide la licencia. Gracias de verdad por compartirlo.
+The per-device lighting engine is adapted from [HueSync](https://github.com/honjow/HueSync) by honjow, released under the BSD 3-Clause license. Their work on the per-brand drivers is what lets Colores talk to so many different handhelds, and I keep their copyright notice as the license requires. Truly, thank you for sharing it.
 
-Colores también se apoya en la [plantilla de plugins de Decky](https://github.com/SteamDeckHomebrew/decky-plugin-template) de Steam Deck Homebrew.
+Colores also builds on the [Decky plugin template](https://github.com/SteamDeckHomebrew/decky-plugin-template) by Steam Deck Homebrew.
 
-Hecho con todo el cariño por las portátiles ❤️.
+Made with a lot of love for handhelds ❤️.
 
-## Desarrollo
+## Development
 
-Además del plugin de Decky, este repositorio contiene el plasmoide Armada OS en
-[`armada/`](armada/README.md) y el emulador en
-[`emulator/`](emulator/README.md). Para generar los entregables:
+In addition to the Decky plugin, this repository contains the Armada OS
+plasmoid under [`armada/`](armada/README.en.md) and the emulator under
+[`emulator/`](emulator/README.en.md). To build the deliverables:
 
 ```bash
-pnpm install && pnpm build   # genera dist/index.js
-python -m pytest             # tests del backend
-pnpm package:plasmoid        # genera Armada-OS.plasmoid
-npm run package:emulator     # genera el AppImage ARM64 del emulador
+pnpm install && pnpm build   # builds dist/index.js
+python -m pytest             # backend tests
+pnpm package:plasmoid        # builds Armada-OS.plasmoid
+npm run package:emulator     # builds the ARM64 emulator AppImage
 ```
 
-## Licencia
+## License
 
-GPL-3.0-or-later (copyleft). Ver [LICENSE](LICENSE). Cualquier fork o versión
-distribuida debe publicar también su código bajo la GPL: nadie puede cerrarlo.
-Las porciones adaptadas de HueSync conservan su aviso BSD 3-Clause (compatible
-con la GPL); ver [NOTICE](NOTICE).
+GPL-3.0-or-later (copyleft). See [LICENSE](LICENSE). Any fork or distributed
+version must also release its source under the GPL — nobody can make it
+closed-source. Portions adapted from HueSync keep their BSD 3-Clause notice
+(GPL-compatible); see [NOTICE](NOTICE).
