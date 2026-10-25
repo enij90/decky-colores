@@ -11,6 +11,7 @@ Colores ya está preparado para funcionar de forma nativa en Armada OS:
 - **Audio reactivo estable.** Usa las herramientas nativas del host, sigue automáticamente los cambios de salida de audio y reconecta la captura sin reiniciar el plugin.
 - **Ambilight en ARM64 y entornos FEX.** Detecta un backend PipeWire/GStreamer completo y, cuando hace falta, utiliza el fallback ARM64 incluido y verificado mediante checksums.
 - **RGB nativo para la familia Armada.** Usa los perfiles de hardware de Armada OS para controlar por zona AYN Odin 2, Odin 3, Portal y Thor; Retroid Pocket; KONKR Pocket FIT Elite; y MANGMI, conservando corrección de color, brillo y Ambilight según la topología conocida.
+- **Mando Lenovo Legion G9 (Legion Tab Gen 3).** Controla las dos tiras de los grips por HID y el botón Legion. Con el [firmware per-LED del G9](https://github.com/enij90/legion-g9-firmware), experimental, el Ambilight toma 5 muestras por lado y controla cada uno de los 10 LEDs por separado; se activa creando un archivo vacío `g9-perled` en la carpeta de ajustes del plugin (`~/homebrew/settings/Colores/`) y reiniciando Decky. Sin ese firmware, no lo actives: el firmware original pinta la tira entera.
 - **Plasmoide Armada OS para Plasma 6.** El source incluye un widget instalable
   que reúne el interruptor de las luces RGB y los perfiles Eco, Balanced y
   Performance. Sigue el idioma configurado en Plasma y se distribuye como
