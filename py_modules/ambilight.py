@@ -581,15 +581,22 @@ class Ambilight:
                 )
                 decoder = json.JSONDecoder()
                 buf = ""
+                # A new monitor starts with a dump of the whole graph: rebuild from
+                # it instead of adding to what an earlier monitor saw. Objects that
+                # went away while no monitor ran (our own capture, stopped together
+                # with the monitor at suspend) would otherwise stay forever.
+                fresh = SourceConsumers()
+
+                def _on_value(value):
+                    self._consumers = fresh
+                    fresh.update(value if isinstance(value, list) else [value])
+
                 while True:
                     chunk = await proc.stdout.read(65536)
                     if not chunk:
                         break
                     buf = _decode_json_stream(
-                        buf + chunk.decode(errors="replace"), decoder,
-                        lambda value: self._consumers.update(
-                            value if isinstance(value, list) else [value]),
-                    )
+                        buf + chunk.decode(errors="replace"), decoder, _on_value)
             except OSError as error:
                 logger.warning("pw-dump monitor failed: %s", error)
             finally:

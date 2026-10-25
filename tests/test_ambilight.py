@@ -25,6 +25,9 @@ from py_modules.ambilight import (
 )
 
 
+_REAL_WATCH_CONSUMERS = Ambilight._watch_consumers
+
+
 @pytest.fixture(autouse=True)
 def _capture_backend(monkeypatch):
     backend = CaptureBackend("test", "/usr/bin/pw-dump", "/usr/bin/gst-launch-1.0")
@@ -473,6 +476,51 @@ def test_source_consumers_recognises_own_capture_by_process():
     consumers.update([_client(70, 1234), _node(71, "gst-launch-1.0", 70), _link(72, 48, 71)])
     assert consumers.others(48) == [71]
     assert consumers.others(48, own_pid=1234) == []
+
+
+def test_new_monitor_forgets_readers_that_left_while_none_ran(monkeypatch):
+    # At suspend the monitor and our capture stop together, so the capture's link
+    # is removed while no monitor runs. The next monitor's first dump no longer has
+    # it and must replace the old state, or the source looks shared forever.
+    dump = ambilight_mod.json.dumps(
+        [_node(61, "gamescope", 30), _link(91, 61, 95), _node(95, "steam", 80)])
+
+    class _Stdout:
+        def __init__(self):
+            self.chunks = [dump.encode()]
+
+        async def read(self, _size):
+            if self.chunks:
+                return self.chunks.pop(0)
+            await asyncio.sleep(3600)
+
+    class _Proc:
+        stdout = _Stdout()
+
+        def kill(self):
+            pass
+
+        async def wait(self):
+            return 0
+
+    async def _spawn(*_command, **_kwargs):
+        return _Proc()
+
+    monkeypatch.setattr(ambilight_mod.asyncio, "create_subprocess_exec", _spawn)
+
+    async def scenario():
+        amb = Ambilight(lambda _colors: None, 1, "/tmp")
+        amb._backend = CaptureBackend("test", "/usr/bin/pw-dump", "/usr/bin/gst-launch-1.0")
+        amb._consumers.update([_link(73, 61, 72), _node(72, "colores-old", 70)])
+        assert amb._consumers.others(61) == [72]
+        task = asyncio.create_task(_REAL_WATCH_CONSUMERS(amb))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return amb._consumers.others(61)
+
+    assert asyncio.run(scenario()) == [95]
 
 
 def test_decode_json_stream_waits_for_complete_values():
