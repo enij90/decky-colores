@@ -1,6 +1,8 @@
 import json
+import sys
 import threading
 import time
+import types
 
 import pytest
 
@@ -404,3 +406,66 @@ def test_build_armada_device_returns_gcmhid_device(tmp_path):
     profile, device = build_armada_device("G9 Tablet", str(tmp_path / "sys/class/leds"), str(tmp_path))
     assert profile["backend"]["type"] == "gcmhid"
     assert isinstance(device, GcmHidRgbDevice)
+
+
+def test_gcm_perled_packet_sets_one_led_by_speed_byte():
+    # Channel 9 (middle of the left grip) green: strip 0, speed 0xE0 + channel.
+    payload = [0x05, 0x0C, 0x0C, 0x01, 0x00, 85, 100, 100, 0x01, 0xE9, 0xFF]
+    assert armada_rgb.gcm_perled_packet(9, (85, 100, 100)) == bytes([0x00, *payload, sum(payload) & 0xFF])
+    # B=0 is ignored by the firmware, so a dark LED is sent as B=1.
+    assert armada_rgb.gcm_perled_packet(0, (0, 0, 0))[8] == 1
+
+
+def test_g9_perled_is_opt_in(tmp_path, monkeypatch):
+    monkeypatch.delenv("COLORES_G9_PERLED", raising=False)
+    monkeypatch.delenv("DECKY_PLUGIN_SETTINGS_DIR", raising=False)
+    monkeypatch.setitem(sys.modules, "decky", types.SimpleNamespace(DECKY_PLUGIN_SETTINGS_DIR=str(tmp_path / "none")))
+    assert not armada_rgb.g9_perled_enabled()
+    monkeypatch.setitem(sys.modules, "decky", types.SimpleNamespace(DECKY_PLUGIN_SETTINGS_DIR=str(tmp_path)))
+    assert not armada_rgb.g9_perled_enabled(str(tmp_path))
+    (tmp_path / "g9-perled").write_text("")
+    assert armada_rgb.g9_perled_enabled(str(tmp_path))
+    assert armada_rgb.g9_perled_enabled()  # through decky.DECKY_PLUGIN_SETTINGS_DIR
+    monkeypatch.setenv("COLORES_G9_PERLED", "1")
+    assert armada_rgb.g9_perled_enabled()
+
+
+def test_gcmhid_perled_sends_only_changed_leds_and_refreshes(tmp_path, monkeypatch):
+    node = _gcm_sysfs(tmp_path, "hidraw1")
+    clock = [100.0]
+    monkeypatch.setattr(armada_rgb.time, "monotonic", lambda: clock[0])
+    device = GcmHidRgbDevice(_G9, str(tmp_path), perled=True)
+    assert device.zone_count == 10 and device.supports_per_zone()
+
+    colors = [(255, 0, 0)] * 10
+    colors[2] = (0, 255, 0)
+    assert device.apply_zones(colors, 100, True)
+    data = node.read_bytes()
+    assert len(data) == 10 * 13
+    # Zone 0 is the top of the left grip (channel 7), zone 5 the top of the right one (channel 4).
+    assert data[:13] == armada_rgb.gcm_perled_packet(7, (0, 100, 100))
+    assert data[2 * 13:3 * 13] == armada_rgb.gcm_perled_packet(9, (85, 100, 100))
+    assert data[5 * 13:6 * 13] == armada_rgb.gcm_perled_packet(4, (0, 100, 100))
+
+    clock[0] += 0.1
+    assert device.apply_zones(colors, 100, True)
+    assert len(node.read_bytes()) == 10 * 13  # unchanged: nothing sent
+
+    colors[9] = (0, 0, 255)
+    clock[0] += 0.1
+    assert device.apply_zones(colors, 100, True)
+    data = node.read_bytes()
+    assert data[10 * 13:] == armada_rgb.gcm_perled_packet(0, (170, 100, 100))
+
+    clock[0] += 3.0  # past the refresh interval: every LED again
+    assert device.apply_zones(colors, 100, True)
+    assert len(node.read_bytes()) == 21 * 13
+
+
+def test_layout_splits_the_edge_per_led_only_with_perled():
+    model = "Lenovo Legion Y700 (2025) / TB321FU"
+    perled = armada_rgb.layout_for_profile(model, {"perled": True}, 10)
+    assert [g["kind"] for g in perled] == ["split-edge", "split-edge"]
+    assert perled[0]["zones"] == [0, 1, 2, 3, 4] and perled[1]["zones"] == [5, 6, 7, 8, 9]
+    stock = armada_rgb.layout_for_profile(model, {}, 2)
+    assert [g["kind"] for g in stock] == ["shared-edge", "shared-edge"]

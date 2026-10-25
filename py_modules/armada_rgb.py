@@ -11,6 +11,7 @@ import math
 import os
 import re
 import threading
+import time
 
 from led_device import LedDevice
 
@@ -480,16 +481,57 @@ def gcm_key_packet(key, hsb):
     return bytes([0x00, *payload, sum(payload) & 0xFF])
 
 
+# Per-LED lights on a G9 running the custom per-LED firmware (not stock): a
+# solid strip-0 command whose speed byte is 0xE0 + channel sets that one LED,
+# hue/saturation as usual and the B byte as that LED's own brightness. B=0 is
+# ignored by the firmware (the LED keeps its color), so "off" is sent as B=1.
+# Any normal command (speed 0x80, effects, off) leaves per-LED mode.
+# Channels top-down along each grip; 5 and 6 are the Legion button and status.
+_GCM_PERLED_STRIP = 0
+_GCM_PERLED_BASE = 0xE0
+_G9_PERLED_LEFT = (7, 8, 9, 10, 11)
+_G9_PERLED_RIGHT = (4, 3, 2, 1, 0)  # the right grip runs bottom-up (checked on the G9)
+_G9_PERLED_FLAG = "g9-perled"
+# Resend every LED this often even if unchanged, to recover after the
+# controller reconnects or leaves per-LED mode.
+_G9_PERLED_REFRESH_S = 2.0
+
+
+def gcm_perled_packet(channel, hsb):
+    hue, saturation, value = hsb
+    payload = [0x05, 0x0C, 0x0C, 0x01, _GCM_PERLED_STRIP, hue, saturation,
+               max(1, value), _GCM_SOLID, _GCM_PERLED_BASE + channel, 0xFF]
+    return bytes([0x00, *payload, sum(payload) & 0xFF])
+
+
+def g9_perled_enabled(settings_dir=None):
+    """Opt-in only: the stock G9 firmware paints whole strips with these commands."""
+    if os.environ.get("COLORES_G9_PERLED", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    if settings_dir is None:
+        try:
+            import decky  # only inside the Decky plugin runtime
+            settings_dir = decky.DECKY_PLUGIN_SETTINGS_DIR
+        except (ImportError, AttributeError):
+            settings_dir = os.environ.get("DECKY_PLUGIN_SETTINGS_DIR")
+    return bool(settings_dir) and os.path.exists(os.path.join(settings_dir, _G9_PERLED_FLAG))
+
+
 class GcmHidRgbDevice(LedDevice):
     """Legion G9 light strips through armada-rgb's gcmhid catalog entry."""
 
-    def __init__(self, backend, sysfs_root="/", correction=None):
+    def __init__(self, backend, sysfs_root="/", correction=None, perled=False):
         self._root = sysfs_root
         self._hid_id = "HID_ID=0003:0000{}:0000{}".format(
             backend["vendor"].upper(), backend["product"].upper()
         )
         self._strips = list(backend["strips"])
-        self._zones = len(self._strips)
+        self.perled = bool(perled)
+        # Per-LED: zones 0-4 down the left grip, 5-9 down the right one.
+        self._channels = list(_G9_PERLED_LEFT + _G9_PERLED_RIGHT) if self.perled else []
+        self._zones = len(self._channels) if self.perled else len(self._strips)
+        self._sent = {}
+        self._sent_at = 0.0
         self._correction = correction
         self._max_brightness = 100
         self.last_error = None
@@ -578,6 +620,7 @@ class GcmHidRgbDevice(LedDevice):
     def invalidate(self):
         with self._write_lock:
             self._close()
+        self._sent = {}
 
     def _with_legion_key(self, packets, strip, hsb):
         if strip == _GCM_LEGION_KEY_STRIP:
@@ -585,15 +628,38 @@ class GcmHidRgbDevice(LedDevice):
         return packets
 
     def _off(self):
+        self._sent = {}
         packets = []
         for strip in self._strips:
             packets.append(gcm_strip_packet(strip, [0, 0, 0], _GCM_OFF))
             self._with_legion_key(packets, strip, [0, 0, 0])
         return self._send(packets)
 
+    def _apply_perled(self, zone_colors, brightness):
+        now = time.monotonic()
+        refresh = now - self._sent_at >= _G9_PERLED_REFRESH_S
+        packets = []
+        for channel, color in zip(self._channels, self._fit(zone_colors)):
+            hue, saturation, value = _gcm_hsb(_correct(color, self._correction))
+            hsb = (hue, saturation, _scale(brightness, value))
+            if refresh or self._sent.get(channel) != hsb:
+                packets.append((channel, hsb, gcm_perled_packet(channel, hsb)))
+        if not packets:
+            return True
+        if not self._send([packet for _, _, packet in packets]):
+            self._sent = {}
+            return False
+        for channel, hsb, _ in packets:
+            self._sent[channel] = hsb
+        if refresh:
+            self._sent_at = now
+        return True
+
     def apply_zones(self, zone_colors, brightness, power):
         if not power:
             return self._off()
+        if self.perled:
+            return self._apply_perled(zone_colors, brightness)
         packets = []
         for strip, color in zip(self._strips, self._fit(zone_colors)):
             hue, saturation, value = _gcm_hsb(_correct(color, self._correction))
@@ -606,6 +672,7 @@ class GcmHidRgbDevice(LedDevice):
         return self.apply_zones([tuple(color)] * self._zones, brightness, power)
 
     def apply_hardware_effect(self, effect_id, color, speed, brightness, power):
+        self._sent = {}
         effect = _GCM_EFFECTS.get(effect_id)
         if not power:
             return self._off()
@@ -626,7 +693,10 @@ def build_armada_device(model, leds_dir, sysfs_root="/"):
     if profile is None:
         return None
     if profile["backend"]["type"] == "gcmhid":
-        device = GcmHidRgbDevice(profile["backend"], sysfs_root, profile.get("correction"))
+        perled = g9_perled_enabled()
+        device = GcmHidRgbDevice(profile["backend"], sysfs_root, profile.get("correction"), perled=perled)
+        if perled:
+            profile = dict(profile, perled=True)
         return profile, device
     device = ArmadaRgbDevice(
         leds_dir,
@@ -667,6 +737,8 @@ def layout_for_profile(model, profile, zones):
         tuning = _SIDE_TUNING.get(model, {})
         width = tuning.get("width", _SIDE_REGION_WIDTH)
         falloff = tuning.get("falloff", 0.0)
+        # Per-LED strips get one sample per LED down the edge band.
+        edge_kind = "split-edge" if (profile or {}).get("perled") else "shared-edge"
         # The side lights sit on the lower half of the grips, so sample only the
         # lower part of each screen edge instead of its full height.
         return [
@@ -674,14 +746,14 @@ def layout_for_profile(model, profile, zones):
                 "name": "Left lights",
                 "region": [0.0, _SIDE_REGION_TOP, width, 1.0],
                 "zones": list(range(half)),
-                "kind": "shared-edge",
+                "kind": edge_kind,
                 "falloff": falloff,
             },
             {
                 "name": "Right lights",
                 "region": [1.0 - width, _SIDE_REGION_TOP, 1.0, 1.0],
                 "zones": list(range(half, zones)),
-                "kind": "shared-edge",
+                "kind": edge_kind,
                 "falloff": falloff,
             },
         ]

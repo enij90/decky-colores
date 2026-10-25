@@ -239,6 +239,15 @@ def subdivide(region, count):
     return [(x0 + i * width, y0, x0 + (i + 1) * width, y1) for i in range(count)]
 
 
+def subdivide_rows(region, count):
+    """Split a region into count bands from top to bottom."""
+    x0, y0, x1, y1 = region
+    if count <= 1:
+        return [tuple(region)]
+    height = (y1 - y0) / count
+    return [(x0, y0 + i * height, x1, y0 + (i + 1) * height) for i in range(count)]
+
+
 def avg_region(frame, width, height, region):
     x0, y0, x1, y1 = region
     cx0 = max(0, int(x0 * width))
@@ -413,7 +422,7 @@ class Ambilight:
         self._adaptive_zones = {
             zone
             for group in self._layout
-            if group.get("kind") == "shared-edge"
+            if group.get("kind") in ("shared-edge", "split-edge")
             for zone in group["zones"]
         }
         self._capture_width = ODIN2_CAP_W if self._adaptive_zones else CAP_W
@@ -784,26 +793,32 @@ class Ambilight:
                     if 0 <= zone < self._zones:
                         self._targets[zone] = target
                 continue
-            if group.get("kind") == "shared-edge":
+            if group.get("kind") in ("shared-edge", "split-edge"):
                 tune = edge_tuning()
                 region = tuned_edge_region(region, tune)
-                if tune.get("method") == "average":
-                    sampled = avg_region(
-                        frame, self._capture_width, self._capture_height, region
-                    )
+                # One band for the whole strip, or one per LED down the edge.
+                if group.get("kind") == "split-edge":
+                    bands = list(zip(subdivide_rows(region, len(indices)), indices))
                 else:
-                    sampled = dominant_region(
-                        frame,
-                        self._capture_width,
-                        self._capture_height,
-                        region,
-                        falloff=float(tune.get("falloff", group.get("falloff", 0.0)) or 0.0),
-                        min_share=float(tune.get("min_share", 0.05)),
-                    )
-                target = boost_saturation(sampled, sat)
-                for zone in indices:
-                    if 0 <= zone < self._zones:
-                        self._targets[zone] = target
+                    bands = [(region, None)]
+                for band, band_zone in bands:
+                    if tune.get("method") == "average":
+                        sampled = avg_region(
+                            frame, self._capture_width, self._capture_height, band
+                        )
+                    else:
+                        sampled = dominant_region(
+                            frame,
+                            self._capture_width,
+                            self._capture_height,
+                            band,
+                            falloff=float(tune.get("falloff", group.get("falloff", 0.0)) or 0.0),
+                            min_share=float(tune.get("min_share", 0.05)),
+                        )
+                    target = boost_saturation(sampled, sat)
+                    for zone in (indices if band_zone is None else [band_zone]):
+                        if 0 <= zone < self._zones:
+                            self._targets[zone] = target
                 continue
             if bottom_edge:
                 x0, y0, x1, y1 = region

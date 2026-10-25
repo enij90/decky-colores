@@ -547,3 +547,34 @@ def test_release_lets_pw_capture_hand_the_stream_back():
     asyncio.run(amb._release(process))
     assert process.terminated
     assert process.returncode == 0
+
+
+def test_subdivide_rows_splits_top_to_bottom():
+    assert ambilight_mod.subdivide_rows((0.0, 0.5, 0.1, 1.0), 2) == [(0.0, 0.5, 0.1, 0.75), (0.0, 0.75, 0.1, 1.0)]
+    assert ambilight_mod.subdivide_rows((0.0, 0.0, 1.0, 1.0), 1) == [(0.0, 0.0, 1.0, 1.0)]
+
+
+def test_split_edge_samples_one_band_per_led():
+    layout = [
+        {"name": "Left lights", "region": [0.0, 0.5, 0.20, 1.0], "zones": [0, 1], "kind": "split-edge"},
+        {"name": "Right lights", "region": [0.80, 0.5, 1.0, 1.0], "zones": [2, 3], "kind": "split-edge"},
+    ]
+    amb = Ambilight(lambda colors: None, zones=4, runtime_dir=None, layout=layout)
+    w, h = amb._capture_width, amb._capture_height
+    frame = bytearray(w * h * 3)
+    for y in range(h):
+        for x in range(w):
+            if x < w * 0.20 or x >= w * 0.80:
+                color = (240, 20, 10) if y < h * 0.75 else (10, 30, 240)
+            else:
+                color = (0, 0, 0)
+            index = (y * w + x) * 3
+            frame[index : index + 3] = bytes(color)
+
+    amb._options = {"saturation": 1.0}
+    amb._update_targets(bytes(frame))
+
+    assert (w, h) == (64, 36)  # split edges also use the adaptive capture size
+    for top, bottom in ((0, 1), (2, 3)):
+        assert amb._targets[top][0] > amb._targets[top][2]
+        assert amb._targets[bottom][2] > amb._targets[bottom][0]
