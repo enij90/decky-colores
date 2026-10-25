@@ -76,9 +76,10 @@ Everything adapts to your handheld. If your machine only has a single global col
 
 ## Installation
 
-The Decky plugin store is the easiest route when available. To install manually:
+This build, with the Legion G9 per-LED support, is not in the official Colores or the Decky plugin
+store yet. To install it:
 
-1. Download `Colores.zip` from the [latest release](https://github.com/Hooandee/decky-colores/releases/latest).
+1. Download `Colores.zip` from the [latest release of this fork](https://github.com/enij90/decky-colores/releases/latest).
 2. In Decky, enable developer mode and install the zip from the install-from-file option.
 
 Colores needs root to write to the system LEDs. Decky will prompt you for it at install.

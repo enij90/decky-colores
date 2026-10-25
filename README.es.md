@@ -76,9 +76,10 @@ Todo se adapta a tu consola. Si tu máquina solo tiene un color global, no te mu
 
 ## Instalación
 
-Desde la tienda de plugins de Decky es la forma más cómoda cuando esté disponible. Para instalar a mano:
+Esta versión, con el soporte per-LED del Legion G9, todavía no está en el Colores oficial ni en la tienda
+de plugins de Decky. Para instalarla:
 
-1. Descarga `Colores.zip` desde la [última release](https://github.com/Hooandee/decky-colores/releases/latest).
+1. Descarga `Colores.zip` desde la [última release de este fork](https://github.com/enij90/decky-colores/releases/latest).
 2. En Decky, activa el modo desarrollador e instala el zip desde la opción de instalar desde archivo.
 
 Colores necesita permisos de root para escribir en los LEDs del sistema. Decky te lo pedirá al instalar.
