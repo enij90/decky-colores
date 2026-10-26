@@ -462,6 +462,19 @@ def test_gcmhid_perled_sends_only_changed_leds_and_refreshes(tmp_path, monkeypat
     assert len(node.read_bytes()) == 21 * 13
 
 
+def test_gcmhid_perled_turns_black_and_dark_greys_off(tmp_path):
+    node = _gcm_sysfs(tmp_path, "hidraw1")
+    device = GcmHidRgbDevice(_G9, str(tmp_path), perled=True)
+    colors = [(0, 0, 0), (20, 24, 30), (255, 255, 255), (128, 0, 0)] + [(0, 0, 0)] * 6
+    assert device.apply_zones(colors, 100, True)
+    data = node.read_bytes()
+    # B = 1 is the lowest the controller accepts; the per-LED firmware shows it as off.
+    assert data[:13] == armada_rgb.gcm_perled_packet(7, (0, 0, 1))
+    assert data[13:26][8] == 1
+    assert data[2 * 13:3 * 13] == armada_rgb.gcm_perled_packet(9, (0, 0, 100))
+    assert data[3 * 13:4 * 13] == armada_rgb.gcm_perled_packet(10, (0, 100, 43))
+
+
 def test_layout_splits_the_edge_per_led_only_with_perled():
     model = "Lenovo Legion Y700 (2025) / TB321FU"
     perled = armada_rgb.layout_for_profile(model, {"perled": True}, 10)

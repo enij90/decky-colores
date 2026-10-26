@@ -576,6 +576,66 @@ def test_run_steps_aside_while_another_client_reads_gamescope(monkeypatch):
     asyncio.run(drive())
 
 
+def test_run_keeps_applying_while_the_screen_is_still(monkeypatch):
+    # gamescope sends no frame while nothing changes on screen. The lights must still
+    # get the last colors again, or a controller replugged on a still screen stays dark.
+    monkeypatch.setattr(ambilight_mod, "SHARED_CHECK_INTERVAL", 0.005)
+    frame = bytes(CAP_W * CAP_H * 3)
+
+    class _Stdout:
+        def __init__(self):
+            self.sent = False
+
+        async def readexactly(self, size):
+            if not self.sent:
+                self.sent = True
+                return frame[:size]
+            await asyncio.sleep(3600)
+
+    class _Stderr:
+        async def read(self):
+            return b""
+
+    class _Proc:
+        returncode = None
+        stdout = _Stdout()
+        stderr = _Stderr()
+        pid = 4321
+
+        def kill(self):
+            pass
+
+        def terminate(self):
+            pass
+
+        async def wait(self):
+            return 0
+
+    async def _spawn(*_command, **_kwargs):
+        return _Proc()
+
+    monkeypatch.setattr(ambilight_mod.asyncio, "create_subprocess_exec", _spawn)
+    applied = []
+    amb = Ambilight(lambda colors: applied.append(list(colors)), zones=2, runtime_dir=None)
+
+    async def _node_48():
+        return 48
+
+    amb._find_node = _node_48
+
+    async def drive():
+        amb.start({"fps": 100})
+        task = amb._task
+        await asyncio.sleep(0.1)
+        count = len(applied)
+        await asyncio.sleep(0.1)
+        assert len(applied) > count
+        amb.stop()
+        await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(drive())
+
+
 def test_release_lets_pw_capture_hand_the_stream_back():
     # SIGTERM, not SIGKILL: pw_capture.py renegotiates gamescope to full size
     # before it disconnects, so a reader that stays is not left with our size.

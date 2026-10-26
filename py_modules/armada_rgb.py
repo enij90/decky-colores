@@ -495,6 +495,14 @@ _G9_PERLED_FLAG = "g9-perled"
 # Resend every LED this often even if unchanged, to recover after the
 # controller reconnects or leaves per-LED mode.
 _G9_PERLED_REFRESH_S = 2.0
+# A LED this dim shows as a faint white, also for black and dark greys (no hue left):
+# treat everything up to this value (percent) as off and stretch the rest, so dark
+# colors still fade in smoothly. Off needs the per-LED firmware 0.75 or later.
+_G9_PERLED_BLACK = 12
+
+
+def _perled_value(value):
+    return round(max(0, value - _G9_PERLED_BLACK) * 100 / (100 - _G9_PERLED_BLACK))
 
 
 def gcm_perled_packet(channel, hsb):
@@ -641,7 +649,7 @@ class GcmHidRgbDevice(LedDevice):
         packets = []
         for channel, color in zip(self._channels, self._fit(zone_colors)):
             hue, saturation, value = _gcm_hsb(_correct(color, self._correction))
-            hsb = (hue, saturation, _scale(brightness, value))
+            hsb = (hue, saturation, _scale(brightness, _perled_value(value)))
             if refresh or self._sent.get(channel) != hsb:
                 packets.append((channel, hsb, gcm_perled_packet(channel, hsb)))
         if not packets:

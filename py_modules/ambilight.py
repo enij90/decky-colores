@@ -718,6 +718,12 @@ class Ambilight:
                         await self._release(proc)
                         break
                     if frame is None:
+                        # gamescope sends no frame while the screen is still: keep
+                        # applying the last colors, so the lights finish their fade
+                        # and a device that came back dark (replugged, reflashed)
+                        # gets them again.
+                        if self._active:
+                            self._tick()
                         continue
                     if isinstance(frame, Exception):
                         raise frame
