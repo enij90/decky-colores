@@ -21,6 +21,10 @@ Colores is now ready to run natively on Armada OS:
   backend, and renders the LEDs on a virtual handheld. Built-in patterns, video,
   and audio exercise Ambilight and audio-reactive mode without physical hardware.
 
+The Legion G9 with the per-LED firmware: Ambilight drives each of the 10 grip LEDs from its own piece of the screen edge.
+
+https://github.com/user-attachments/assets/490ddd0e-5a0a-4dd6-ab39-dcf86cef98fa
+
 <p align="center">
   <a href="https://ko-fi.com/hooandee"><img src="https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
   <a href="https://www.patreon.com/hooandee"><img src="https://img.shields.io/badge/Patreon-Support%20me-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon"></a>

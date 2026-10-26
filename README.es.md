@@ -21,6 +21,10 @@ Colores ya está preparado para funcionar de forma nativa en Armada OS:
   y backend y muestra los LEDs sobre una consola virtual. Incluye patrones,
   video y audio para probar Ambilight y el modo reactivo sin hardware físico.
 
+El Legion G9 con el firmware per-LED: el Ambilight controla cada uno de los 10 LEDs de los grips con su propio trozo del borde de la pantalla.
+
+https://github.com/user-attachments/assets/490ddd0e-5a0a-4dd6-ab39-dcf86cef98fa
+
 <p align="center">
   <a href="https://ko-fi.com/hooandee"><img src="https://img.shields.io/badge/Ko--fi-Inv%C3%ADtame%20un%20caf%C3%A9-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
   <a href="https://www.patreon.com/hooandee"><img src="https://img.shields.io/badge/Patreon-Ap%C3%B3yame-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon"></a>
